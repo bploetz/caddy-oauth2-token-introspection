@@ -94,22 +94,6 @@ var tokenLocations = map[string]bool{
 	BearerTokenLocation: true,
 }
 
-// https://www.rfc-editor.org/rfc/rfc7662.html#section-2.2
-var standardOAuth2TokenResponseProperties = map[string]bool{
-	"active":     true,
-	"scope":      true,
-	"client_id":  true,
-	"username":   true,
-	"token_type": true,
-	"exp":        true,
-	"iat":        true,
-	"nbf":        true,
-	"sub":        true,
-	"aud":        true,
-	"iss":        true,
-	"jti":        true,
-}
-
 // CaddyModule returns the Caddy module information.
 func (OAuth2TokenIntrospection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
