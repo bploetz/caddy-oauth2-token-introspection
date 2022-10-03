@@ -105,7 +105,7 @@ func (OAuth2TokenIntrospection) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the module.
 func (o *OAuth2TokenIntrospection) Provision(ctx caddy.Context) error {
 	o.logger = ctx.Logger()
-	o.logger.Info("http.handlers.oauth2_token_introspection module provisioned")
+	o.logger.Info("module provisioned")
 	return nil
 }
 
@@ -141,24 +141,30 @@ type response struct {
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	o.logger.Debug("processing request")
 	var introspectionRequestBody = []byte("")
 	if o.TokenLocation == BearerTokenLocation {
+		o.logger.Debug("getting token from 'Authorization: Bearer' header")
 		token, tokenerr := o.getTokenFromBearerToken(r)
 		if tokenerr != nil {
 			o.haltRequest(w, "")
 			return nil
 		}
 		introspectionRequestBody = []byte(fmt.Sprintf(`token=%s`, token))
+	} else {
+		o.logger.Error("token not processed (token_location not configured?)")
 	}
 
 	introspectionRequest, _ := http.NewRequest(http.MethodPost, o.IntrospectionEndpoint, bytes.NewBuffer(introspectionRequestBody))
 	introspectionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	if o.AuthenticationStrategy == ClientCredentialsAuthenticationStrategy {
+		o.logger.Debug("using client credentials authentication strategy with token introspection endpoint")
 		introspectionRequestBasicAuth := fmt.Sprintf("%s:%s", o.IntrospectionClientID, o.IntrospectionClientSecret)
 		introspectionRequest.Header.Set("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(introspectionRequestBasicAuth))))
 	}
 	if o.AuthenticationStrategy == BearerTokenAuthenticationStrategy {
+		o.logger.Debug("using bearer token authentication strategy with token introspection endpoint")
 		// TODO
 	}
 
@@ -173,6 +179,8 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		o.haltRequest(w, fmt.Sprintf("error performing token introspection. %s", raerr))
 		return nil
 	}
+
+	o.logger.Debug(fmt.Sprintf("response status code was %d from token introspection endpoint", introspectionResponse.StatusCode))
 	if introspectionResponse.StatusCode != 200 {
 		o.haltRequest(w, fmt.Sprintf("error performing token introspection. Status: %d, Response: %s", introspectionResponse.StatusCode, string(introspectionResponseBody)))
 		return nil
@@ -233,6 +241,7 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	o.logger.Debug("request authorized via oauth2 token introspection endpoint")
 	return next.ServeHTTP(w, r)
 }
 
