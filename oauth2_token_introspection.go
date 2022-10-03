@@ -183,6 +183,7 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		o.haltRequest(w, fmt.Sprintf("error performing token introspection. Status: %d, Response: %s", introspectionResponse.StatusCode, string(introspectionResponseBody)))
 		return nil
 	} else {
+		o.logger.Debug(fmt.Sprintf("token introspection response: %s", string(introspectionResponseBody)))
 		var introspectionResponseDocument = make(map[string]interface{})
 		muerr := json.Unmarshal(introspectionResponseBody, &introspectionResponseDocument)
 		if muerr != nil {
