@@ -141,7 +141,7 @@ type response struct {
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	o.logger.Debug("processing request")
+	o.logger.Debug("authorizing request")
 	var introspectionRequestBody = []byte("")
 	if o.TokenLocation == BearerTokenLocation {
 		o.logger.Debug("getting token from 'Authorization: Bearer' header")
@@ -151,8 +151,6 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 			return nil
 		}
 		introspectionRequestBody = []byte(fmt.Sprintf(`token=%s`, token))
-	} else {
-		o.logger.Error("token not processed (token_location not configured?)")
 	}
 
 	introspectionRequest, _ := http.NewRequest(http.MethodPost, o.IntrospectionEndpoint, bytes.NewBuffer(introspectionRequestBody))
@@ -186,7 +184,6 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		return nil
 	} else {
 		var introspectionResponseDocument = make(map[string]interface{})
-		// var introspectionResponseDocument IntrospectionResponse
 		muerr := json.Unmarshal(introspectionResponseBody, &introspectionResponseDocument)
 		if muerr != nil {
 			o.haltRequest(w, fmt.Sprintf("error performing token introspection. %s", muerr))
@@ -196,6 +193,7 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		if active, ok := introspectionResponseDocument["active"]; ok {
 			if activeBool, ok := active.(bool); ok {
 				if !activeBool {
+					o.logger.Debug("oauth2 token is not active. halting request.")
 					o.haltRequest(w, "")
 					return nil
 				}
