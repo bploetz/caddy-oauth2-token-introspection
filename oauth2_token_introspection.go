@@ -2,6 +2,7 @@ package oauth2_token_introspection
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -33,12 +35,12 @@ func (o *OAuth2TokenIntrospection) UnmarshalCaddyfile(d *caddyfile.Dispenser) er
 	d.NextArg()
 	for d.NextBlock(0) {
 		switch d.Val() {
-		case "authentication_strategy":
-			if !d.AllArgs(&o.AuthenticationStrategy) {
-				return d.ArgErr()
-			}
 		case "token_location":
 			if !d.AllArgs(&o.TokenLocation) {
+				return d.ArgErr()
+			}
+		case "introspection_authentication_strategy":
+			if !d.AllArgs(&o.IntrospectionAuthenticationStrategy) {
 				return d.ArgErr()
 			}
 		case "introspection_endpoint":
@@ -52,6 +54,15 @@ func (o *OAuth2TokenIntrospection) UnmarshalCaddyfile(d *caddyfile.Dispenser) er
 		case "introspection_client_secret":
 			if !d.AllArgs(&o.IntrospectionClientSecret) {
 				return d.ArgErr()
+			}
+		case "introspection_timeout":
+			timeoutValue := d.ScalarVal()
+			if timeoutValue == nil {
+				return d.Errf("%v not a valid introspection_timeout value (expecting integer)", timeoutValue)
+			} else if timeoutValueInt, ok := timeoutValue.(int); ok {
+				return d.Errf("%v not a valid introspection_timeout value (expecting integer)", timeoutValue)
+			} else {
+				o.IntrospectionTimeout = timeoutValueInt
 			}
 		case "set_header":
 			if o.InboundHeaders == nil {
@@ -71,13 +82,14 @@ func (o *OAuth2TokenIntrospection) UnmarshalCaddyfile(d *caddyfile.Dispenser) er
 
 // OAuth2TokenIntrospection is a Caddy http.handlers Module for authorizing requests via OAuth2 Token Introspection
 type OAuth2TokenIntrospection struct {
-	logger                    *zap.Logger
-	AuthenticationStrategy    string            `json:"authentication_strategy"`
-	TokenLocation             string            `json:"token_location"`
-	IntrospectionEndpoint     string            `json:"introspection_endpoint"`
-	IntrospectionClientID     string            `json:"introspection_client_id"`
-	IntrospectionClientSecret string            `json:"introspection_client_secret"`
-	InboundHeaders            map[string]string `json:"inbound_headers"`
+	logger                              *zap.Logger
+	TokenLocation                       string            `json:"token_location"`
+	IntrospectionEndpoint               string            `json:"introspection_endpoint"`
+	IntrospectionAuthenticationStrategy string            `json:"introspection_authentication_strategy"`
+	IntrospectionClientID               string            `json:"introspection_client_id"`
+	IntrospectionClientSecret           string            `json:"introspection_client_secret"`
+	IntrospectionTimeout                int               `json:"introspection_timeout"`
+	InboundHeaders                      map[string]string `json:"inbound_headers"`
 }
 
 const ClientCredentialsAuthenticationStrategy = "client_credentials"
@@ -111,12 +123,6 @@ func (o *OAuth2TokenIntrospection) Provision(ctx caddy.Context) error {
 
 // Validate validates that the module has a usable config.
 func (o *OAuth2TokenIntrospection) Validate() error {
-	if o.AuthenticationStrategy == "" {
-		return errors.New("'authentication_strategy' is required")
-	}
-	if !authenticationStrategies[o.AuthenticationStrategy] {
-		return errors.New("invalid authentication_strategy")
-	}
 	if o.TokenLocation == "" {
 		return errors.New("'token_location' is required")
 	}
@@ -125,6 +131,12 @@ func (o *OAuth2TokenIntrospection) Validate() error {
 	}
 	if o.IntrospectionEndpoint == "" {
 		return errors.New("'introspection_endpoint' is required")
+	}
+	if o.IntrospectionAuthenticationStrategy == "" {
+		return errors.New("'introspection_authentication_strategy' is required")
+	}
+	if !authenticationStrategies[o.IntrospectionAuthenticationStrategy] {
+		return errors.New("invalid introspection_authentication_strategy")
 	}
 	if o.IntrospectionClientID == "" {
 		return errors.New("'introspection_client_id' is required")
@@ -156,17 +168,24 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	introspectionRequest, _ := http.NewRequest(http.MethodPost, o.IntrospectionEndpoint, bytes.NewBuffer(introspectionRequestBody))
 	introspectionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	if o.AuthenticationStrategy == ClientCredentialsAuthenticationStrategy {
+	if o.IntrospectionAuthenticationStrategy == ClientCredentialsAuthenticationStrategy {
 		o.logger.Debug("using client credentials authentication strategy with token introspection endpoint")
 		introspectionRequestBasicAuth := fmt.Sprintf("%s:%s", o.IntrospectionClientID, o.IntrospectionClientSecret)
 		introspectionRequest.Header.Set("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(introspectionRequestBasicAuth))))
 	}
-	if o.AuthenticationStrategy == BearerTokenAuthenticationStrategy {
+	if o.IntrospectionAuthenticationStrategy == BearerTokenAuthenticationStrategy {
 		o.logger.Debug("using bearer token authentication strategy with token introspection endpoint")
 		// TODO
 	}
 
-	introspectionResponse, huerr := http.DefaultClient.Do(introspectionRequest)
+	timeout := 2000
+	if o.IntrospectionTimeout != 0 {
+		timeout = o.IntrospectionTimeout
+	}
+	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+	defer timeoutCancel()
+
+	introspectionResponse, huerr := http.DefaultClient.Do(introspectionRequest.WithContext(timeoutCtx))
 	if huerr != nil {
 		o.haltRequest(w, fmt.Sprintf("error performing token introspection. %s", huerr))
 		return nil
@@ -250,8 +269,7 @@ func (o OAuth2TokenIntrospection) haltRequest(w http.ResponseWriter, errorMessag
 	w.WriteHeader(http.StatusUnauthorized)
 }
 
-// gets the token from an HTTP header matching the format
-// `Authorization: Bearer ...mytoken....`
+// gets the bearer token from an HTTP Authorization header matching the format `Authorization: Bearer ...mytoken....`
 func (o OAuth2TokenIntrospection) getTokenFromBearerToken(r *http.Request) (string, error) {
 	authorizationHeader := r.Header.Get("Authorization")
 	if authorizationHeader == "" {

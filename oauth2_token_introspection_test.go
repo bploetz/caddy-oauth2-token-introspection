@@ -1,10 +1,12 @@
 package oauth2_token_introspection
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/caddyserver/caddy/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -50,54 +52,63 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 	})
 
 	Describe("Provision()", func() {
+		It("sets the logger field", func() {
+			ctx := context.Background()
+			cctx, cancel := caddy.NewContext(caddy.Context{Context: ctx})
+			defer cancel()
+			oauth2TokenIntrospection := OAuth2TokenIntrospection{}
+			err := oauth2TokenIntrospection.Provision(cctx)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(oauth2TokenIntrospection.logger).ToNot(BeNil())
+		})
 	})
 
 	Describe("Validate()", func() {
-		It("returns an error if AuthenticationStrategy is not set", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{}
-			err := oauth2TokenIntrospectionToValidate.Validate()
-			Expect(err).Should(HaveOccurred())
-			Expect(err.Error()).To(Equal("'authentication_strategy' is required"))
-		})
-
-		It("returns an error if AuthenticationStrategy is invalid", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "nope"}
-			err := oauth2TokenIntrospectionToValidate.Validate()
-			Expect(err).Should(HaveOccurred())
-			Expect(err.Error()).To(Equal("invalid authentication_strategy"))
-		})
-
 		It("returns an error if TokenLocation is not set", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials"}
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{}
 			err := oauth2TokenIntrospectionToValidate.Validate()
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(Equal("'token_location' is required"))
 		})
 
 		It("returns an error if TokenLocation is invalid", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials", TokenLocation: "nope"}
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "nope"}
 			err := oauth2TokenIntrospectionToValidate.Validate()
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(Equal("invalid token_location"))
 		})
 
 		It("returns an error if IntrospectionEndpoint is not set", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials", TokenLocation: "bearer_token", IntrospectionClientID: "foo", IntrospectionClientSecret: "bar"}
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token"}
 			err := oauth2TokenIntrospectionToValidate.Validate()
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(Equal("'introspection_endpoint' is required"))
 		})
 
+		It("returns an error if IntrospectionAuthenticationStrategy is not set", func() {
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect"}
+			err := oauth2TokenIntrospectionToValidate.Validate()
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal("'introspection_authentication_strategy' is required"))
+		})
+
+		It("returns an error if IntrospectionAuthenticationStrategy is invalid", func() {
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "nope"}
+			err := oauth2TokenIntrospectionToValidate.Validate()
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal("invalid introspection_authentication_strategy"))
+		})
+
 		Describe("client_credentials authentication strategy", func() {
 			It("returns an error if IntrospectionClientID is not set", func() {
-				oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials", TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionClientSecret: "bar"}
+				oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "client_credentials", IntrospectionClientSecret: "bar"}
 				err := oauth2TokenIntrospectionToValidate.Validate()
 				Expect(err).Should(HaveOccurred())
 				Expect(err.Error()).To(Equal("'introspection_client_id' is required"))
 			})
 
 			It("returns an error if IntrospectionClientSecret is not set", func() {
-				oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials", TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionClientID: "foo"}
+				oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "client_credentials", IntrospectionClientID: "foo"}
 				err := oauth2TokenIntrospectionToValidate.Validate()
 				Expect(err).Should(HaveOccurred())
 				Expect(err.Error()).To(Equal("'introspection_client_secret' is required"))
@@ -105,7 +116,7 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 		})
 
 		It("does not return an error for a valid instance", func() {
-			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{AuthenticationStrategy: "client_credentials", TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionClientID: "foo", IntrospectionClientSecret: "bar"}
+			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "client_credentials", IntrospectionClientID: "foo", IntrospectionClientSecret: "bar"}
 			err := oauth2TokenIntrospectionToValidate.Validate()
 			Expect(err).ShouldNot(HaveOccurred())
 		})
@@ -120,7 +131,7 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 
 		Describe("client_credentials authentication strategy", func() {
 			JustBeforeEach(func() {
-				oauth2TokenIntrospection.AuthenticationStrategy = ClientCredentialsAuthenticationStrategy
+				oauth2TokenIntrospection.IntrospectionAuthenticationStrategy = ClientCredentialsAuthenticationStrategy
 				oauth2TokenIntrospection.IntrospectionClientID = "foo"
 				oauth2TokenIntrospection.IntrospectionClientSecret = "bar"
 			})
@@ -154,7 +165,7 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 
 		Describe("bearer_token token location", func() {
 			JustBeforeEach(func() {
-				oauth2TokenIntrospection.AuthenticationStrategy = ClientCredentialsAuthenticationStrategy
+				oauth2TokenIntrospection.IntrospectionAuthenticationStrategy = ClientCredentialsAuthenticationStrategy
 				oauth2TokenIntrospection.IntrospectionClientID = "foo"
 				oauth2TokenIntrospection.IntrospectionClientSecret = "bar"
 				oauth2TokenIntrospection.TokenLocation = BearerTokenLocation
@@ -290,7 +301,7 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 
 		Describe("InboundHeaders", func() {
 			JustBeforeEach(func() {
-				oauth2TokenIntrospection.AuthenticationStrategy = ClientCredentialsAuthenticationStrategy
+				oauth2TokenIntrospection.IntrospectionAuthenticationStrategy = ClientCredentialsAuthenticationStrategy
 				oauth2TokenIntrospection.IntrospectionClientID = "foo"
 				oauth2TokenIntrospection.IntrospectionClientSecret = "bar"
 				oauth2TokenIntrospection.TokenLocation = BearerTokenLocation
