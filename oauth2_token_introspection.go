@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,13 +57,15 @@ func (o *OAuth2TokenIntrospection) UnmarshalCaddyfile(d *caddyfile.Dispenser) er
 				return d.ArgErr()
 			}
 		case "introspection_timeout":
-			timeoutValue := d.ScalarVal()
-			if timeoutValue == nil {
-				return d.Errf("%v not a valid introspection_timeout value (expecting integer)", timeoutValue)
-			} else if timeoutValueInt, ok := timeoutValue.(int); ok {
-				return d.Errf("%v not a valid introspection_timeout value (expecting integer)", timeoutValue)
+			var timeoutString string
+			if !d.AllArgs(&timeoutString) {
+				return d.ArgErr()
+			}
+			timeoutInt, err := strconv.Atoi(timeoutString)
+			if err != nil {
+				return d.Errf("%v not a valid introspection_timeout value (expecting integer)", timeoutString)
 			} else {
-				o.IntrospectionTimeout = timeoutValueInt
+				o.IntrospectionTimeout = timeoutInt
 			}
 		case "set_header":
 			if o.InboundHeaders == nil {
