@@ -91,6 +91,7 @@ type OAuth2TokenIntrospection struct {
 	IntrospectionAuthenticationStrategy string            `json:"introspection_authentication_strategy"`
 	IntrospectionClientID               string            `json:"introspection_client_id"`
 	IntrospectionClientSecret           string            `json:"introspection_client_secret"`
+	IntrospectionBearerToken            string            `json:"introspection_bearer_token"`
 	IntrospectionTimeout                int               `json:"introspection_timeout"`
 	InboundHeaders                      map[string]string `json:"inbound_headers"`
 }
@@ -141,11 +142,18 @@ func (o *OAuth2TokenIntrospection) Validate() error {
 	if !authenticationStrategies[o.IntrospectionAuthenticationStrategy] {
 		return errors.New("invalid introspection_authentication_strategy")
 	}
-	if o.IntrospectionClientID == "" {
-		return errors.New("'introspection_client_id' is required")
+	if o.IntrospectionAuthenticationStrategy == ClientCredentialsAuthenticationStrategy {
+		if o.IntrospectionClientID == "" {
+			return errors.New("'introspection_client_id' is required")
+		}
+		if o.IntrospectionClientSecret == "" {
+			return errors.New("'introspection_client_secret' is required")
+		}
 	}
-	if o.IntrospectionClientSecret == "" {
-		return errors.New("'introspection_client_secret' is required")
+	if o.IntrospectionAuthenticationStrategy == BearerTokenAuthenticationStrategy {
+		if o.IntrospectionBearerToken == "" {
+			return errors.New("'introspection_bearer_token' is required")
+		}
 	}
 	return nil
 }
@@ -178,7 +186,7 @@ func (o OAuth2TokenIntrospection) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 	if o.IntrospectionAuthenticationStrategy == BearerTokenAuthenticationStrategy {
 		o.logger.Debug("using bearer token authentication strategy with token introspection endpoint")
-		// TODO
+		introspectionRequest.Header.Set("Authorization", fmt.Sprintf("Bearer %s", o.IntrospectionBearerToken))
 	}
 
 	timeout := 2000

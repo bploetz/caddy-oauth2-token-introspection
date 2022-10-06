@@ -115,6 +115,15 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 			})
 		})
 
+		Describe("bearer_token authentication strategy", func() {
+			It("returns an error if IntrospectionBearerToken is not set", func() {
+				oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "bearer_token"}
+				err := oauth2TokenIntrospectionToValidate.Validate()
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(Equal("'introspection_bearer_token' is required"))
+			})
+		})
+
 		It("does not return an error for a valid instance", func() {
 			oauth2TokenIntrospectionToValidate := OAuth2TokenIntrospection{TokenLocation: "bearer_token", IntrospectionEndpoint: "https://some.server/oauth2/introspect", IntrospectionAuthenticationStrategy: "client_credentials", IntrospectionClientID: "foo", IntrospectionClientSecret: "bar"}
 			err := oauth2TokenIntrospectionToValidate.Validate()
@@ -160,7 +169,28 @@ var _ = Describe("OAuth2TokenIntrospection", func() {
 		})
 
 		Describe("bearer_token authentication strategy", func() {
-			// TODO
+			JustBeforeEach(func() {
+				oauth2TokenIntrospection.IntrospectionAuthenticationStrategy = BearerTokenAuthenticationStrategy
+				oauth2TokenIntrospection.IntrospectionBearerToken = "foo"
+			})
+
+			It("authenticates with the configured bearer token", func() {
+				var bearerTokenSentToIntrospectionServer string
+				mockIntrospectionServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					bearerTokenSentToIntrospectionServer = r.Header.Get("Authorization")
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(`{"active":true}`))
+				}))
+				oauth2TokenIntrospection.IntrospectionEndpoint = fmt.Sprintf("%s/%s", mockIntrospectionServer.URL, "oauth2/introspect")
+
+				req := httptest.NewRequest("GET", "/v1/blah", nil)
+				req.Header.Set("Accept", "application/json")
+				req.Header.Set("Authorization", "Bearer mytoken")
+				w := httptest.NewRecorder()
+				err := oauth2TokenIntrospection.ServeHTTP(w, req, mockNext{})
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(bearerTokenSentToIntrospectionServer).To(Equal(fmt.Sprintf("Bearer %s", oauth2TokenIntrospection.IntrospectionBearerToken)))
+			})
 		})
 
 		Describe("bearer_token token location", func() {
