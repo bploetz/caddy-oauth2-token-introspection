@@ -64,7 +64,7 @@ The `oauth2_token_introspection` middleware supports the following configuration
 ## token_location
 Where to find the OAuth2 access token in the HTTP request coming into Caddy. Allowable values:
 
-* `bearer_token` - The access token is in the standard `Authorization: Bearer <mytoken>` HTTP headder
+* `bearer_token` - The access token is in the standard `Authorization: Bearer <mytoken>` HTTP header
 
 ## introspection_endpoint
 The URL of the OAuth2 Token Introspection endpoint
@@ -94,7 +94,7 @@ Exposes properties from a successful token introspection response as HTTP header
 {"active": true, "scope": "member", "sub": "abcd1234", "email": "john.doe@someone.com"}
 ```
 
-The following headers can be added to the request proxied to the upstream so it has some context about the client making the API call:
+The following headers will be added to the request proxied to the upstream service, so that has some context about the client making the API call:
 
 ```
 set_header X-API-GATEWAY-SCOPE scope
@@ -102,7 +102,7 @@ set_header X-API-GATEWAY-SUBJECT sub
 set_header X-API-GATEWAY-EMAIL-ADDRESS email
 ```
 
-You may use dot notation to traverse nested objects in the token introspection response. An error will be raised if a `set_header` is pointed at a property that is not a scalar (i.e. you point at an object or an array.
+You may use dot notation to traverse nested objects in the token introspection response. An error will be raised if a `set_header` is pointed at a property that is not a scalar (i.e. you point at an object or an array).
 
 For example, for a token introspection response that looks like this:
 
@@ -118,7 +118,7 @@ set_header X-API-GATEWAY-FIRST-NAME user.first_name
 set_header X-API-GATEWAY-LAST-NAME user.last_name
 ```
 
-But these would result in errors since they point at an object/array:
+These would result in errors since they point at an object/array:
 ```
 set_header X-API-GATEWAY-USER: user
 set_header X-API-GATEWAY-USER-PREFS: user.preferences
